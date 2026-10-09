@@ -4,119 +4,135 @@ components.html("""
 <!DOCTYPE html>
 <html>
 <head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-  body { margin:0; background:#87CEEB; font-family: 'Press Start 2P', monospace; text-align:center; overflow:hidden }
-  #game { width:360px; height:640px; background:#7CFC00; margin:auto; position:relative; border:4px solid #654321; overflow:hidden; }
-  #kampung { width:100%; height:100px; background:#DEB887; position:absolute; bottom:0; }
-  #kandang { position:absolute; right:10px; bottom:20px; font-size:60px; }
-  .ayam { position:absolute; font-size:40px; transition: all 0.3s; }
-  #maling { position:absolute; font-size:45px; left:10px; bottom:80px; transition:left 0.2s; }
-  #btns { margin-top:10px; }
-  button { padding:12px 10px; font-size:16px; margin:5px; border-radius:12px; border:none; font-weight:bold; }
-  #score { background:white; padding:8px; border-radius:10px; display:inline-block; margin:5px; }
+ body{margin:0;background:black;overflow:hidden;text-align:center;color:white;font-family:monospace}
+ #ui{position:absolute;top:10px;left:10px;z-index:10;background:rgba(0,0,0,0.7);padding:10px;border-radius:10px}
+ #cross{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:30px;z-index:5;color:red}
+ button{padding:8px 12px;margin:3px;border-radius:8px;font-weight:bold}
+ canvas{display:block}
 </style>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
 </head>
 <body>
-<div id="score">🐔 <span id="ayamCount">5</span> | 🪙 <span id="koin">0</span> | ❤️ <span id="nyawa">3</span></div>
-<div id="game">
-  <div id="kampung"></div>
-  <div id="kandang">🏠</div>
-  <div id="maling">🦹‍♂️</div>
+<div id="ui">
+ ❤️ <span id="hp">100</span> | 💀 KILL <span id="kill">0</span><br>
+ <button onclick="moveL()">⬅️</button>
+ <button onclick="shoot()" style="background:red;color:white">🔫 TEMBAK</button>
+ <button onclick="moveR()">➡️</button><br>
+ <button onclick="moveF()">⬆️ MAJU</button>
+ <button onclick="moveB()">⬇️ MUNDUR</button>
 </div>
-<div id="btns">
-  <button onclick="senter()" style="background:#FFD700">🔦 SENTER</button>
-  <button onclick="jebak()" style="background:#FF6347">🪤 JEBAK</button>
-  <button onclick="anjing()" style="background:#8B4513; color:white">🐕 ANJING</button>
-</div>
-<p id="log" style="background:white; width:340px; margin:10px auto; padding:5px; border-radius:8px; font-size:12px; height:60px; overflow:auto">Malam sunyi... ayam petok petok...</p>
+<div id="cross">+</div>
 
-<script>
-let ayamCount = 5, koin = 0, nyawa = 3, posMaling = 10;
-let malingEl = document.getElementById('maling');
-let gameEl = document.getElementById('game');
-let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+<script type="module">
+import * as THREE from 'three';
 
-function playSound(freq, dur){
-  let o = audioContext.createOscillator();
-  let g = audioContext.createGain();
-  o.frequency.value = freq;
-  o.connect(g); g.connect(audioContext.destination);
-  o.start(); g.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + dur);
-  o.stop(audioContext.currentTime + dur);
+let scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
+scene.fog = new THREE.Fog(0x87CEEB, 20, 60);
+
+let camera = new THREE.PerspectiveCamera(75, 360/580, 0.1, 1000);
+camera.position.set(0,3,10);
+
+let renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(360,580);
+document.body.appendChild(renderer.domElement);
+
+// tanah
+let ground = new THREE.Mesh(new THREE.PlaneGeometry(100,100), new THREE.MeshStandardMaterial({color:0x228B22}));
+ground.rotation.x = -Math.PI/2; scene.add(ground);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+let dirLight = new THREE.DirectionalLight(0xffffff, 0.8); dirLight.position.set(10,20,10); scene.add(dirLight);
+
+// player = kamera
+let hp=100,kill=0;
+let enemies=[];
+let bullets=[];
+
+function spawnEnemy(){
+  let geo = new THREE.BoxGeometry(1,2,1);
+  let mat = new THREE.MeshStandardMaterial({color:0xff0000});
+  let m = new THREE.Mesh(geo,mat);
+  m.position.set((Math.random()-0.5)*30,1, -20 - Math.random()*30);
+  m.userData.hp=1;
+  scene.add(m); enemies.push(m);
+}
+for(let i=0;i<5;i++) spawnEnemy();
+
+function shoot(){
+  // suara dor
+  let ctx=new (window.AudioContext||window.webkitAudioContext)(); let o=ctx.createOscillator(); o.frequency.value=800; o.connect(ctx.destination); o.start(); o.stop(ctx.currentTime+0.1);
+  let geo=new THREE.SphereGeometry(0.15,8,8); let mat=new THREE.MeshBasicMaterial({color:0xffff00});
+  let b=new THREE.Mesh(geo,mat);
+  b.position.copy(camera.position);
+  b.userData.dir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+  scene.add(b); bullets.push(b);
+  setTimeout(()=>{ scene.remove(b); bullets.splice(bullets.indexOf(b),1); },2000);
 }
 
-function log(t){ document.getElementById('log').innerHTML = t + '<br>' + document.getElementById('log').innerHTML; }
+function moveL(){ camera.position.x-=1; }
+function moveR(){ camera.position.x+=1; }
+function moveF(){ camera.translateZ(-1); }
+function moveB(){ camera.translateZ(1); }
+window.moveL=moveL; window.moveR=moveR; window.moveF=moveF; window.moveB=moveB; window.shoot=shoot;
 
-function spawnAyam(){
-  gameEl.querySelectorAll('.ayam').forEach(e=>e.remove());
-  for(let i=0;i<ayamCount;i++){
-    let a = document.createElement('div');
-    a.className='ayam';
-    a.innerHTML='🐔';
-    a.style.left = (200 + Math.random()*100)+'px';
-    a.style.bottom = (30 + Math.random()*50)+'px';
-    a.style.transform = `scale(${0.8+Math.random()*0.5})`;
-    gameEl.appendChild(a);
-    // ayam lari dikit-dikit
-    setInterval(()=>{
-      a.style.left = (parseInt(a.style.left) + (Math.random()*20-10))+'px';
-      a.style.bottom = (30 + Math.random()*60)+'px';
-    }, 800);
-  }
-}
+let keys={};
+window.addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
+window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 
-function updateUI(){
-  document.getElementById('ayamCount').innerText=ayamCount;
-  document.getElementById('koin').innerText=koin;
-  document.getElementById('nyawa').innerText=nyawa;
-  malingEl.style.left = posMaling+'px';
-}
+function animate(){
+  requestAnimationFrame(animate);
 
-function senter(){
-  playSound(800,0.2);
-  posMaling = Math.max(10, posMaling-60);
-  log('🔦 SENTER! Maling silau mundur!');
-  updateUI();
-}
-function jebak(){
-  playSound(200,0.4);
-  if(Math.random()>0.4){
-    posMaling=10; koin+=2;
-    log('🪤 JEBAKAN KENA! +2 koin!');
-  } else {
-    posMaling+=20;
-    log('💨 Jebakan meleset!');
-  }
-  updateUI();
-}
-function anjing(){
-  if(koin>=1){ 
-    koin--; playSound(120,0.5); playSound(300,0.3);
-    posMaling=10;
-    log('🐕 GUK GUK GUK! Maling kabur!');
-  } else log('❌ Butuh 1 koin buat pakan anjing!');
-  updateUI();
-}
+  if(keys['w']||keys['ArrowUp']) moveF();
+  if(keys['s']||keys['ArrowDown']) moveB();
+  if(keys['a']||keys['ArrowLeft']) moveL();
+  if(keys['d']||keys['ArrowRight']) moveR();
+  if(keys[' ']) { if(!window.lastShot||Date.now()-window.lastShot>200){shoot(); window.lastShot=Date.now();} }
 
-// maling jalan otomatis
-setInterval(()=>{
-  if(ayamCount<=0 || nyawa<=0) return;
-  posMaling += 8 + Math.random()*15;
-  if(posMaling >= 270){
-    ayamCount--; nyawa--; posMaling=10;
-    playSound(100,0.8);
-    log('😭 AYAM HILANG! Petok!!');
-    spawnAyam();
-    if(ayamCount<=0){ log('💀 GAME OVER - Ayam habis!'); alert('GAME OVER!'); }
-  }
-  updateUI();
-  // ayam nelor
-  if(Math.random()>0.85){ koin++; log('🥚 Petok petok! Telur +1'); playSound(600,0.15); updateUI(); }
-}, 700);
+  // peluru jalan
+  bullets.forEach(b=>{ b.position.add(b.userData.dir.clone().multiplyScalar(0.8)); });
 
-spawnAyam();
-updateUI();
+  // musuh ngejar + cek kena
+  enemies.forEach((en,idx)=>{
+    if(!en.parent) return;
+    let dir=new THREE.Vector3().subVectors(camera.position, en.position); dir.y=0; dir.normalize().multiplyScalar(0.05);
+    en.position.add(dir);
+    en.lookAt(camera.position);
+
+    bullets.forEach(bu=>{
+      if(en.position.distanceTo(bu.position)<1.2){
+        scene.remove(en); scene.remove(bu);
+        enemies.splice(idx,1); kill++; document.getElementById('kill').innerText=kill;
+        if(kill%5==0){ for(let i=0;i<2;i++) spawnEnemy(); }
+        setTimeout(spawnEnemy,1000);
+      }
+    });
+    if(en.position.distanceTo(camera.position)<2){
+      hp-=0.5; document.getElementById('hp').innerText=Math.floor(hp);
+      if(hp<=0){ alert('💀 KAMU GUGUR! KILL:'+kill); hp=100; kill=0; camera.position.set(0,3,10); }
+    }
+  });
+
+  // mouse drag buat muter kamera
+  renderer.render(scene,camera);
+}
+animate();
+
+// drag mouse = muter
+let isDrag=false,lastX=0;
+renderer.domElement.addEventListener('mousedown',e=>{isDrag=true;lastX=e.clientX;});
+renderer.domElement.addEventListener('mouseup',()=>isDrag=false);
+renderer.domElement.addEventListener('mousemove',e=>{
+  if(isDrag){ let dx=e.clientX-lastX; camera.rotation.y-=dx*0.01; lastX=e.clientX; }
+});
+renderer.domElement.addEventListener('touchmove',e=>{
+  let dx=e.touches[0].clientX-lastX; camera.rotation.y-=dx*0.01; lastX=e.touches[0].clientX;
+});
+renderer.domElement.addEventListener('click',shoot);
 </script>
 </body>
 </html>
-""", height=780)
+""", height=700)
